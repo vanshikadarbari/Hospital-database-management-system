@@ -1,0 +1,95 @@
+﻿1. List of patients who are admitted on a particular date.
+
+
+SELECT PATIENT_ID, FNAME FROM ADMITTED NATURAL JOIN PATIENT_GENERAL _DETAILS WHERE ADMIT_DATE=’06/14/2018’
+
+
+1. List all the patients below age of 18 who died from dengue
+
+
+SELECT PATIENT_ID, FNAME FROM PATIENT_GENERAL_DETAILS AS P JOIN DISCHARGE_SUMMARY AS D
+ON P.PATIENT_ID=D.PID where diagnosis_details='Dengue' and patient_status='D' and age(bdate)<= interval '18 years';
+
+
+
+
+1. Obtain the number of days doctor with Dr_id=7 has worked in May.
+
+
+SELECT COUNT(DATES) FROM OPD_ATTENDANCE  WHERE (EMP_ID  = 7 AND EXTRACT(month FROM dates)= '5' and IN_TIME IS NOT NULL)
+ 
+        
+
+
+1. List patients who have cashless insurance, are examined by a particular doctor(id=31) and have total charges greater than or equal for Rs. 50,000.
+
+
+SELECT Q.PATIENT_ID, Q.FNAME FROM(SELECT R.PATIENT_ID, R.FNAME FROM (SELECT P.PATIENT_ID, P.FNAME FROM PATIENT_GENERAL_DETAILS AS P natural join final_bill as f natural join patient_insurance_details as pind NATURAL JOIN POLICY_DETAILS AS PD WHERE PD.CASHLESS_AVAILABILITY=’Y’ ) AS R NATURAL JOIN INTERMEDIATE_BILL AS IBM WHERE IBM.OPD_DR_ID=4 OR SPECIALISED_DR_ID=’31’ ) AS Q WHERE F.TOTAL_CHARGES>=’50,000’
+        
+        
+
+
+
+
+1. List of medical equipments which needs reordering under a given department.
+
+
+        SELECT EQUIPMENT_ID,NAME FROM MEDICAL_EQUIPMENT_DETAILS WHERE 
+        DEP_NO=4 AND STOCK<=REORDERLEVEL
+        
+
+
+
+
+        
+1. List how many beds are unoccupied in general ward.
+
+
+SELECT CAPACITY-NO_OF_BEDS_OCCUPIED AS UNOCCUPIED FROM ROOM_ DETAILS WHERE ROOM_TYPE=’GW’
+ 
+
+
+
+
+
+
+1. List female patients over the age of 40 that have undergone knee surgery in the past year
+.
+SELECT R.PATIENT_ID, R.FNAME FROM (SELECT P.PATIENT_ID,P.FNAME FROM PATIENT_GENERAL_DETAILS AS P NATURAL JOIN DISCHARGE SUMMARY AS D WHERE AGE(BDATE)>INTERVAL ‘40 YEARS’ and d.diagnosis_detail=”Displaced knee”AND P.SEX = ‘F’) as r NATURAL JOIN ADMITTED AS A  WHERE AGE(CURRENT_DATE,A.ADMIT_DATE)<=INTERVAL '1 YEAR'
+        
+
+
+
+
+
+
+1. List all the patients who were admitted in accident and emergency department in last 1 year and had policy from The New India Assurance Co LTD company.
+
+
+        Select p.patient_id,p.fname from admitted as a natural join patient_general_details as p natural join ((Select distinct patient_id from intermediate_bill natural join treatments_available natural join department where dep_name = ‘Accidents and Emergency’ ) as r
+Intersect
+(Select patient_id from patient_insurance_details natural join policy_details where company_name = ‘The New India Assurance CO LTD’) as q) as pd where age(current_date,a.admit_date)<= interval ’1 year’
+        
+
+
+
+
+
+
+1. List the percentage of patients who had high cholesterol in their medical history and died due to heart failure.
+
+
+        ((Select count(patient_id)as total from (SELECT patient_id,fname from patient_medical_conditions as p natural join discharge_summary as d where p.medical_history = ‘High cholesterol’ and d.diagnosis_details = ‘Heart failure’ and d.status=’D’)  as r )*100/
+(Select count(patient_id)as total from (SELECT patient_id,fname from patient_medical_conditions as p natural join discharge_summary as d where p.medical_history = ‘High cholesterol’ and d.diagnosis_details = ‘Heart failure’) as p  ) as r ) over()
+
+
+
+
+
+
+
+
+1. List the patients who died after delivering a  child.
+
+
+Select fname, lname from patient natural join discharge_summary where diagnosis_details=’Pregnant’ and status=’D’;

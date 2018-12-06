@@ -1,0 +1,165 @@
+﻿1.Stored procedure for releasing a room:
+CREATE OR REPLACE FUNCTION release(roomno room_no_type,roomtype char(3)) RETURNS void  AS $BODY$
+DECLARE 
+                
+                r room_details%rowtype;        
+                nob int;
+BEGIN
+        nob:=0;
+                FOR r IN SELECT * FROM room_details WHERE room_type=roomtype
+                 LOOP
+                                                                                                                                
+                         IF r.room_no = roomno THEN
+                                                                                                                                        
+                                 IF (r.no_of_beds_occupied-1)<0  THEN
+                                    RAISE NOTICE 'this room was already empty';
+                                
+                        ELSEIF (r.no_of_beds_occupied-1)>=0 THEN
+                                                                                                                                        
+                                nob:=r.no_of_beds_occupied;
+                                nob:=nob-1;                                                                                 
+                                 UPDATE room_details set no_of_beds_occupied=nob WHERE room_no=roomno;
+                END IF;                                                                                                                        
+                END IF;        
+                END LOOP;        
+        
+END $BODY$ LANGUAGE 'plpgsql';                
+
+
+2:Stored procedure for occupying a room:
+CREATE OR REPLACE FUNCTION occupy(roomno room_no_type,roomtype char(3)) RETURNS void  AS $BODY$
+DECLARE 
+                
+                r room_details%rowtype;        
+                nob int;
+BEGIN
+        nob:=0;
+                FOR r IN SELECT * FROM room_details WHERE room_type=roomtype
+                 LOOP
+                                                                                                                                
+                         IF r.room_no = roomno THEN
+                                                                                                                                        
+                                 IF (r.no_of_beds_occupied+1)>r.capacity  THEN
+                                    RAISE NOTICE 'room is occupied';
+                                
+                        ELSEIF (r.no_of_beds_occupied+1)<=r.capacity THEN
+                                                                                                                                        
+                                nob:=r.no_of_beds_occupied;
+                                nob:=nob+1;                                                                                 
+                                 UPDATE room_details set no_of_beds_occupied=nob WHERE room_no=roomno;
+                END IF;                                                                                                                        
+                END IF;        
+                END LOOP;        
+        
+END $BODY$ LANGUAGE 'plpgsql';                
+
+
+3.Trigger Function for intermediate bill:
+CREATE OR REPLACE FUNCTION intermediatebillfunc() returns TRIGGER AS $BODY$
+ 
+ DECLARE
+        r record;
+                    r1 record;
+                    totalcharge int;
+BEGIN
+  totalcharge:=0;
+     select * into r from ((((intermediate_bill join opd on (new.opd_dr_id=opd.emp_id))                                                                                                                                                                                                                                                                                                                                                                                                                                              join treatments_available                                                                                                                                                                                                                                                                                on(new.treatment_id=treatments_available.tid))                                                                                                                                                                                                                                                                                                  join room_details                                                                                                                                                                                                                                                                                                          on(new.room_no=room_details.room_no))                                                                                                                                                                                                                                                                                                            join room_type                                                                                                                                                                                                                                                                                                        on(room_details.room_type=room_type.room_abbrev));
+                                                                                                                    
+select * into r1 from           intermediate_bill join specialised_doctor                                                                                                                                                                                                                                                    on (new.specialised_dr_id=specialised_doctor.emp_id);                                                                          
+UPDATE intermediate_bill set opd_dr_charge=r.consulting_fees where case_a_no=new.case_a_no and bill_id=new.bill_id ;
+UPDATE intermediate_bill set specialised_dr_charge=r1.charge_per_visit where case_a_no=new.case_a_no and bill_id=new.bill_id;
+UPDATE intermediate_bill set room_charges=r.charge_per_bed where case_a_no=new.case_a_no and bill_id=new.bill_id ;
+UPDATE intermediate_bill set treatment_charges=r.fees where case_a_no=new.case_a_no and bill_id=new.bill_id ;
+                                                                                                                                                    --totalcharge:=r.consulting_fees+r.charge_per_visit+r.charge_per_bed+r.fees;
+                                                                                                                                                                                                                                                                                                           --raise notice '%',totalcharge;
+                                    if(r1 is null) then                                                                                                                                                                                                                                                                         
+UPDATE intermediate_bill set total_charge=r.consulting_fees + r.charge_per_bed + r.fees where case_a_no=new.case_a_no and bill_id=new.bill_id ;
+                    else
+                                    UPDATE intermediate_bill set total_charge=r.consulting_fees + r.charge_per_bed +r1.charge_per_visit+r.fees where case_a_no=new.case_a_no and bill_id=new.bill_id ;
+                                    END IF;                                                                                                                                                                                                                                                           
+RETURN NULL;
+                    
+END
+                     $BODY$ LANGUAGE 'plpgsql';                        
+                                        
+ 
+ 4.Trigger for intermediate bill:
+CREATE TRIGGER ibt
+AFTER INSERT ON intermediate_bill
+FOR EACH ROW EXECUTE PROCEDURE  intermediatebillfunc();
+ 
+5.Trigger Function for final  bill:
+ 
+CREATE OR REPLACE FUNCTION fbt() RETURNS TRIGGER AS $BODY$
+DECLARE
+                                    ibt intermediate_bill.total_charge%type;
+                                    totalc int;
+                                    clam int;
+BEGIN
+      for ibt in select total_charge from intermediate_bill where case_a_no=new.case_a_no
+                      LOOP
+                             totalc:=totalc+ibt.total_charge;
+                                    END LOOP;
+                                    update final_bill set totalcharges=totalc where case_a_no=new.case_a_no;
+                                    if(new.insurance_status='A') then
+                                             clat:=(new.claim_per_passed/100)*totalc
+                                             update final_bill set claim_amt_passed=clat where case_a_no=new.case_a_no;
+                                                     update final_bill set amt_payable=totalc-clat where case_a_no=new.case_a_no;
+                                    else
+                                            
+                                    RETURN NULL;
+                    
+END
+                     $BODY$ LANGUAGE 'plpgsql';
+
+
+6.Trigger  for final bill
+:
+CREATE TRIGGER fbt
+AFTER INSERT ON final_bill
+FOR EACH ROW EXECUTE PROCEDURE fbt();
+ 
+ 7.Trigger Function for stock:
+ 
+create or replace function givenotice() returns trigger as $BODY$
+ 
+BEGIN
+    IF (new.stock<=new.reorderlevel) then
+                      raise notice 'equipment id=% depid=% needs to be ordered',new.equipment_id,new.dep_no;
+                      else
+                             raise notice 'order should be placed after % more equipments gets used',new.stock-new.reorderlevel;
+                      END IF;
+                      return null;
+                      END
+ $BODY$ LANGUAGE 'plpgsql';
+ 
+8.Trigger  for stock:
+CREATE TRIGGER notice
+AFTER UPDATE ON medical_equipment_details
+ for each row execute procedure givenotice();
+
+
+9.Trigger Function for consultation bill: 
+
+
+create or replace function cb() returns trigger
+as $BODY$
+declare
+   r record;
+   tc int;
+begin
+   select * into r from consultation_bill join opd on(opd.emp_id=new.dr_id);
+   update consultation_bill set consultation_charges=r.consulting_fees where case_c_no=new.case_c_no;
+   tc:=new.extra_charges+r.consulting_fees;
+   update consultation_bill set total_charges=tc where case_c_no=new.case_c_no;
+   return null;
+   end
+    $BODY$ LANGUAGE 'plpgsql';
+
+
+10.Trigger Function for consultation bill: 
+
+
+ CREATE TRIGGER cb
+AFTER INSERT ON consultation_bill
+FOR EACH ROW EXECUTE PROCEDURE  cb();
